@@ -12,6 +12,7 @@ import           Data.IORef
 import           System.IO
 import           System.IO.Unsafe (unsafePerformIO)
 import           Control.Exception
+import           Data.ByteString.Builder
 
 import           System.Logging.Facade.Types
 
@@ -20,8 +21,13 @@ type LogSink = LogRecord -> IO ()
 
 -- use the unsafePerformIO hack to share one sink across a process
 logSink :: IORef LogSink
-logSink = unsafePerformIO (defaultLogSink >>= newIORef)
 {-# NOINLINE logSink #-}
+logSink = unsafePerformIO action
+  where
+    action = do
+      hSetBinaryMode stderr True
+      hSetBuffering stderr (BlockBuffering Nothing)
+      defaultLogSink >>= newIORef
 
 -- | Return the global log sink.
 getLogSink :: IO LogSink
@@ -46,7 +52,8 @@ defaultLogSink :: IO LogSink
 defaultLogSink = defaultLogSink_ `fmap` newMVar ()
 
 defaultLogSink_ :: MVar () -> LogSink
-defaultLogSink_ mvar record = withMVar mvar (\() -> hPutStrLn stderr output)
+defaultLogSink_ mvar record =
+    withMVar mvar $ \() -> hPutBuilder stderr (stringUtf8 output)
   where
     level = logRecordLevel record
     mLocation = logRecordLocation record
